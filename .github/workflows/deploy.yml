@@ -10,17 +10,39 @@ jobs:
     runs-on: self-hosted
 
     steps:
+      # ============================================================
+      # 1. CHECKOUT SOURCE DARI GITHUB
+      # ============================================================
       - name: Checkout source
         uses: actions/checkout@v4
 
+      # ============================================================
+      # 2. CEK ENVIRONMENT SERVER
+      # ============================================================
       - name: Show environment
         run: |
-          echo "Runner: $(hostname)"
+          echo "========================================"
+          echo "SENTURION Backend Deployment"
+          echo "========================================"
+          echo "Runner  : $(hostname)"
+          echo "User    : $(whoami)"
+          echo "PHP     :"
           php -v
+          echo "========================================"
 
+      # ============================================================
+      # 3. COPY SOURCE KE FOLDER PRODUCTION
+      #
+      # File production berikut TIDAK disentuh:
+      # - .env
+      # - storage
+      # - file bawaan aaPanel
+      # ============================================================
       - name: Deploy source to production
         run: |
           TARGET="/www/wwwroot/api.senturion"
+
+          echo "Deploying source to $TARGET"
 
           rsync -av --delete \
             --exclude=".env" \
@@ -31,33 +53,81 @@ jobs:
             --exclude="502.html" \
             --exclude="index.html" \
             --exclude="storage/" \
+            --exclude="vendor/" \
             "$GITHUB_WORKSPACE/" "$TARGET/"
 
+          echo "Source deployment completed."
+
+      # ============================================================
+      # 4. INSTALL DEPENDENCY COMPOSER
+      # ============================================================
       - name: Install Composer dependencies
         working-directory: /www/wwwroot/api.senturion
         run: |
+          echo "Installing Composer dependencies..."
+
           php -d open_basedir= /usr/bin/composer install \
             --no-dev \
             --prefer-dist \
             --optimize-autoloader \
             --no-interaction
 
+      # ============================================================
+      # 5. JALANKAN MIGRATION YANG MASIH PENDING
+      # ============================================================
       - name: Run database migrations
         working-directory: /www/wwwroot/api.senturion
-        run: php artisan migrate --force
+        run: |
+          echo "Running database migrations..."
 
+          php -d open_basedir= artisan migrate --force
+
+      # ============================================================
+      # 6. CLEAR CACHE LAMA
+      # ============================================================
+      - name: Clear Laravel cache
+        working-directory: /www/wwwroot/api.senturion
+        run: |
+          echo "Clearing Laravel cache..."
+
+          php -d open_basedir= artisan optimize:clear
+
+      # ============================================================
+      # 7. OPTIMIZE LARAVEL PRODUCTION
+      # ============================================================
       - name: Optimize Laravel
         working-directory: /www/wwwroot/api.senturion
         run: |
-          php artisan optimize:clear
-          php artisan optimize
+          echo "Optimizing Laravel..."
 
+          php -d open_basedir= artisan optimize
+
+      # ============================================================
+      # 8. PERMISSION FOLDER YANG HARUS WRITABLE
+      # ============================================================
       - name: Fix writable directories
         working-directory: /www/wwwroot/api.senturion
         run: |
-          chmod -R ug+rwX storage bootstrap/cache
+          echo "Fixing writable directory permissions..."
 
+          chmod -R ug+rwX storage
+          chmod -R ug+rwX bootstrap/cache
+
+      # ============================================================
+      # 9. CEK HASIL DEPLOYMENT
+      # ============================================================
+      - name: Verify Laravel
+        working-directory: /www/wwwroot/api.senturion
+        run: |
+          echo "Checking Laravel..."
+
+          php -d open_basedir= artisan about
+
+      # ============================================================
+      # 10. SELESAI
+      # ============================================================
       - name: Deployment completed
         run: |
+          echo "========================================"
           echo "SENTURION Backend deployment completed."
-          php /www/wwwroot/api.senturion/artisan about
+          echo "========================================"
